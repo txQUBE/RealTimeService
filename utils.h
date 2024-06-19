@@ -1,0 +1,36 @@
+/*
+ * utils.h
+ *
+ *  Created on: 18.06.2024
+ *      Author: qnx
+ */
+
+#ifndef UTILS_H_
+#define UTILS_H_
+
+#include <iostream>// 		проепроцессор
+#include <errno.h> // 		для EOK
+#include <unistd.h>// 		sleep
+#include <sys/dispatch.h>// именованные каналы
+#include <string>//			строки
+
+using namespace std;
+
+extern bool DEBUG; //				показывать дополнительные сообщения
+extern bool ShutDown; //			флаг завершить работу
+
+extern const int CODE_TIMER; // 	сообщение-импульс от таймера
+extern const int ND; //				id узла
+extern int tik;// 					ТИК
+
+
+//Структура для запоминания СУБТД
+typedef struct _tdb_ms {
+	string name;//	имя СУБТД
+	int pid; // 	id процесса
+	int tid; // 	id таймера
+} tdb_ms_t;
+
+extern tdb_ms_t TDB;
+
+#endif /* UTILS_H_ */
