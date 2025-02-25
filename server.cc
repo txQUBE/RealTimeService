@@ -9,11 +9,11 @@
 
 #define REG_CHAN 	"RTS_registration_channel"
 
-const int REG_TYPE = 201; //				тип сообщения для регистрации
+const int REG_TYPE = 101; //				тип сообщения для регистрации
 const int SEND_TIME_TYPE = 2; //		тип сообщения для отправки времени
 
 typedef struct _pulse msg_header_t; // абстрактный тип для заголовка сообщения как у импульса
-typedef struct _TIME_hadnle {
+typedef struct _registration_hadnle {
 	msg_header_t hdr;
 	string name; //		имя СУБТД
 	int pid; //			id процесса
@@ -41,41 +41,49 @@ void* server(void*) {
 		rcvid = MsgReceive(attach->chid, &msg, sizeof(msg), NULL);
 		cout << "- - - - Server ПОЛУЧЕН RCVID = " << rcvid << endl;
 
-		if (rcvid == -1) { /* Ошибка, завершение */
+		if (rcvid == -1) { /* Ошибка */
 			cout << "- - - - Server: 	поулчен rcvid = " << rcvid << endl;
+			continue;
 		}
 
 		if (rcvid == 0) {/* Получен импульс */
 			switch (msg.hdr.code) {
 			case _PULSE_CODE_DISCONNECT:
-				/* Клиент разорвал все ранее созданные связи (вызвал name_close() для каждого вызова
-				 name_open() с именем канала) или терминировался */
-				ConnectDetach(msg.hdr.scoid);
-				/* Уничтожить соединение ядра с каналом сервера*/
-				name_detach(attach, 0);
-				/* Удалить имя процесса */
+				ConnectDetach(msg.hdr.scoid); /* Уничтожить соединение ядра с каналом сервера*/
+				name_detach(attach, 0); /* Удалить имя процесса */
 				printf("Server receive _PULSE_CODE_DISCONNECT and terminated");
-				return EXIT_SUCCESS;
+				break;
 			case _PULSE_CODE_UNBLOCK:
-				/* Клиент хочет деблокироваться (получен сигнал или истёк таймаут). Серверу необходимо
-				 принять решение о посылке ответа */
+				cout << "- - - - Server _PULSE_CODE_UNBLOCK\n";
 				break;
 			default:
-				/* Пришёл импульс от какого-то процесса или от ядра
-				 (PULSE_CODE_COIDDEATH или _PULSE_CODE_THREADDEATH) */
+				cout << "- - - - Server default\n";
 				break;
 			}
-			continue;// Завершить текущую итерацию цикла
+			continue;
 		}
 		/* Полученное сообщение не импульс */
 		if (msg.hdr.type == _IO_CONNECT) {
 			cout << "- - - - Server: recieve name_open()\n";
 			MsgReply(rcvid, EOK, NULL, 0);
-			continue; // Завершить текущую итерацию цикла
+			continue;
+		}
+		if (msg.hdr.type > _IO_BASE && msg.hdr.type <= _IO_MAX) { //Получено IO-сообщение от ядра
+			cout << "_IO_BASE < hdt.type << _IO_MAX\n";
+			MsgError(rcvid, ENOSYS );
+			continue;
+		}
+		if (msg.hdr.code == REG_TYPE) {
+			cout << "- - - - Server: полчено сообщение REG_TYPE \n";
+			regTDB(msg.name, msg.pid, msg.tid);
+			MsgReply(rcvid, EOK, 0, 0);
+			continue;
 		}
 	}
+
 	printf("- - - - Server: Server is shutting down \n");
 	cout << "- - - - Server: ShutDown = " << shutDown << endl;
+	return NULL;
 }
 
 //-----------------------------------------------------------------
@@ -83,9 +91,13 @@ void* server(void*) {
 //*	Сохраняет данные о СУБТД
 //-----------------------------------------------------------------
 void regTDB(string name, int pid, int tid) {
+	pthread_mutex_lock(&registered_tdb.Mutex);
+
 	registered_tdb.name = name;
 	registered_tdb.pid = pid;
 	registered_tdb.tid = tid;
+
+	pthread_mutex_unlock(&registered_tdb.Mutex);
 
 	cout << "Server: " << endl;
 	cout << "----------TDB_MS REGISTRATION INFO----------" << endl;

@@ -136,8 +136,12 @@ void setPeriodicTimer(timer_t* periodicTimer,
 void setPeriodicTimerSeconds(long nsec, int sec) {
 	timer.tick_nsec = nsec;
 	timer.tick_sec = sec;
+
 	struct itimerspec* periodicTimerStruct = &timer.periodicTick;
+	periodicTimerStruct->it_value.tv_sec = timer.tick_sec;
+	periodicTimerStruct->it_value.tv_nsec = timer.tick_nsec;
 	periodicTimerStruct->it_interval.tv_sec = timer.tick_sec;
 	periodicTimerStruct->it_interval.tv_nsec = timer.tick_nsec;
+
 	timer_settime(timer.periodicTimer, 0, &timer.periodicTick, NULL);
 }
