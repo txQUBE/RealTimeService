@@ -13,6 +13,8 @@
 #include <unistd.h>// 		sleep
 #include <sys/dispatch.h>// именованные каналы
 #include <string>//			строки
+#include <map>
+
 using namespace std;
 
 extern bool DEBUG; //				показывать дополнительные сообщения
@@ -24,12 +26,16 @@ extern int TICK;// 					ТИК
 
 //Структура для запоминания СУБТД
 typedef struct _tdb_ms {
-	pthread_mutex_t Mutex;
-	string name;//	имя СУБТД
 	int pid; // 	id процесса
 	int tid; // 	id нити
+	int nd;  // 	дескриптор узла
 } tdb_ms_t;
 
-extern tdb_ms_t registered_tdb;
+typedef struct _tdb_map_buffer{
+	pthread_mutex_t Mutex;
+	map<string, tdb_ms_t> buf;
+} tdb_map_buffer_t;
+
+extern tdb_map_buffer_t tdb_map;;
 
 #endif /* UTILS_H_ */

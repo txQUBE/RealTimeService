@@ -3,43 +3,42 @@
 
 #define NOTIF_CHAN 	"notification_channel"
 
-bool shutDown = false; //		флаг завершить работу
-bool DEBUG = true; //			показывать дополнительные сообщения
+bool shutDown = false; //	флаг завершить работу
 
 struct Clock {
-	long tick_nsec; // Длительность одного тика в наносекундах
-	int tick_sec;// в секундах
-	int Time; // Номер текущего тика часов ПРВ
-	timer_t periodicTimer;//дескриптор таймера
-	struct itimerspec periodicTick;//интервал срабатывания относительного таймера в 1 тик
+	long tick_nsec; // 	Длительность одного тика в наносекундах
+	int tick_sec;// 	Длительность одного тика в секундах
+	int Time; // 		Номер текущего тика часов ПРВ
+	timer_t periodicTimer;// дескриптор таймера
+	struct itimerspec periodicTick;// интервал срабатывания относительного таймера в 1 тик
 };
 
-Clock timer; // Буфер таймера
-timer_t timerId = -10;
+Clock timer; // Буфер параметров таймера
+timer_t timerId = -10;// таймер, "-10" означает об отсутствии таймера
 
-const int CODE_TIMER = 1;// 	сообщение-импульс от таймера
-const int ND = 0; //			id узла
+const int CODE_TIMER = 1;//код сообщения-импульса от таймера
 
-pthread_barrier_t notif_barrier; //синхронизация подключения к каналу уведомлений
+pthread_barrier_t notif_barrier; // барьер синхронизации подключения к каналу для уведомлений таймера
 
-//подготовка к запуску периодического таймера уведомления импульсом об истечении тика часов ПРВ
+//функция подготовки к запуску периодического таймера уведомления импульсом об истечении тика часов ПРВ
 void setPeriodicTimer(timer_t* periodicTimer,
 		struct itimerspec* periodicTimerStruct, int notif_coid);
 
-//menu
-void menu_showList();
-void menu_changeTick();
-void setPeriodicTimerSeconds(long nsec, int sec);
+//Функции меню управления СРВ
+void menu_showList(); // 		отобразить список команд
+void menu_changeTick(); //		изменить тик таймера
 
-//-----------------------------------------------------------------
-//*	Нить main
-//-----------------------------------------------------------------
+void setPeriodicTimerTick(long nsec, int sec); //		установить тик таймера
+
+/*
+ * Нить main
+ */
 int main() {
 
-	timer.tick_nsec = 0; //
-	timer.tick_sec = 10;
+	timer.tick_nsec = 0; // начальные значения тика
+	timer.tick_sec = 10;// 	начальные значения тика
 	//инициализация мутекса буфера зарегестрированных СУБТД
-	if (pthread_mutex_init(&registered_tdb.Mutex, NULL) != EOK) {
+	if (pthread_mutex_init(&tdb_map.Mutex, NULL) != EOK) {
 		std::cout << "main: ошибка pthread_mutex_init(): " << strerror(errno)
 				<< std::endl;
 		return EXIT_FAILURE;
@@ -50,7 +49,7 @@ int main() {
 		perror("main: ошибка запуска сервера\n");
 	};
 
-	pthread_barrier_init(&notif_barrier, NULL, 2);
+	pthread_barrier_init(&notif_barrier, NULL, 2); // инициализация барьера подключения к каналу уведомлений для таймера
 
 	//Запуск канала уведомлений
 	if ((pthread_create(NULL, NULL, &notification, NULL)) != EOK) {
@@ -66,12 +65,15 @@ int main() {
 		exit(EXIT_FAILURE);
 	}
 
+	//	подготовить таймер
 	setPeriodicTimer(&timer.periodicTimer, &timer.periodicTick, notif_coid);
-	timer_settime(timer.periodicTimer, 0, &timer.periodicTick, NULL); // запуск относительного периодического таймера!
+	// 	запуск относительного периодического таймера!
+	timer_settime(timer.periodicTimer, 0, &timer.periodicTick, NULL);
 	timerId = timer.periodicTimer;
 
 	cout << "Введите команду:\n";
 	cout << "Введите 0 чтобы увидеть список команд\n";
+	// обработка ввода пользователя
 	while (!shutDown) {
 		int userInput;
 
@@ -89,6 +91,9 @@ int main() {
 	}
 }
 
+/*
+ * функция меню для ввода нового значения тика
+ */
 void menu_changeTick() {
 	if (timerId == -10) {
 		cout << "таймер не запущен\n";
@@ -101,19 +106,34 @@ void menu_changeTick() {
 		int newTick_sec;
 		cin >> newTick_sec;
 
-		setPeriodicTimerSeconds(newTick_nsec, newTick_sec);
+		setPeriodicTimerTick(newTick_nsec, newTick_sec);
 	}
 	cout << "Новый тик таймера: " << timer.tick_sec << " сек "
 			<< timer.tick_nsec << " нс.";
 }
 
+/*
+ * Функция отображения меню
+ */
 void menu_showList() {
 	cout << "-----МЕНЮ-----\n";
 	cout << "1. Изменить тик таймера\n";
 	cout << "-----МЕНЮ-----\n";
 }
 
-// Функция создания таймера тика с уведомлением импульсом
+/*
+ * Функция установки параметров таймера
+ */
+void setTimerProps(struct itimerspec* periodicTimerStruct) {
+	periodicTimerStruct->it_value.tv_sec = timer.tick_sec;
+	periodicTimerStruct->it_value.tv_nsec = timer.tick_nsec;
+	periodicTimerStruct->it_interval.tv_sec = timer.tick_sec;
+	periodicTimerStruct->it_interval.tv_nsec = timer.tick_nsec;
+}
+
+/*
+ * Функция создания таймера тика с уведомлением импульсом
+ */
 void setPeriodicTimer(timer_t* periodicTimer,
 		struct itimerspec* periodicTimerStruct, int notif_coid) {
 	struct sigevent event;
@@ -127,21 +147,16 @@ void setPeriodicTimer(timer_t* periodicTimer,
 	}
 
 	// установить интервал срабатывания периодического таймера тика в системном времени
-	periodicTimerStruct->it_value.tv_sec = timer.tick_sec;
-	periodicTimerStruct->it_value.tv_nsec = timer.tick_nsec; // задержка первого импульса
-	periodicTimerStruct->it_interval.tv_sec = timer.tick_sec;
-	periodicTimerStruct->it_interval.tv_nsec = timer.tick_nsec;
+	setTimerProps(periodicTimerStruct);
 }
 
-void setPeriodicTimerSeconds(long nsec, int sec) {
+/*
+ * функция установки параметров таймера
+ */
+void setPeriodicTimerTick(long nsec, int sec) {
 	timer.tick_nsec = nsec;
 	timer.tick_sec = sec;
 
-	struct itimerspec* periodicTimerStruct = &timer.periodicTick;
-	periodicTimerStruct->it_value.tv_sec = timer.tick_sec;
-	periodicTimerStruct->it_value.tv_nsec = timer.tick_nsec;
-	periodicTimerStruct->it_interval.tv_sec = timer.tick_sec;
-	periodicTimerStruct->it_interval.tv_nsec = timer.tick_nsec;
-
+	setTimerProps(&timer.periodicTick);
 	timer_settime(timer.periodicTimer, 0, &timer.periodicTick, NULL);
 }

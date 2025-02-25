@@ -20,11 +20,14 @@ union TimerSig {
 	_pulse M_pulse;
 } tsig;
 
-//-----------------------------------------------------------------
-//*	Нить уведомлений
-//* Принимает импульсы от таймера
-//*	Отправляет сигнал по проществии тика в зарегестрирование СУБД
-//----------------------------------------------------------------
+//Прототипы функций
+void sendNotifTickPassed(); // функция отправки сигнала о прошедшем тике
+
+/*
+ * Нить уведомлений
+ * Принимает импульсы от таймера
+ * Отправляет сигнал по проществии тика в зарегестрирование СУБД
+ */
 void* notification(void*) {
 
 	cout << "- Notif: запуск канала уведомлений" << endl;
@@ -37,7 +40,7 @@ void* notification(void*) {
 		exit(EXIT_FAILURE);
 	}
 
-	pthread_barrier_wait(&notif_barrier); //можно подключаться к каналу
+	pthread_barrier_wait(&notif_barrier); // ожидание подключения таймера к каналу
 
 	//	Приём сообщений таймера
 	for (;;) {
@@ -45,23 +48,15 @@ void* notification(void*) {
 		int rcvid = MsgReceive(attach->chid, &tsig, sizeof(tsig), NULL);
 		if (rcvid == 0) { // получен импульс от таймера
 			gotAPulse();
-			if (registered_tdb.pid == 0) {
-				cout << "- Notif: нет зарегистрированных СУБТД" << endl;
-			} else {
-				cout << "- Notif: отправка SIGUSR1" << endl << endl;
-				//	Послать сигнал о прошедшем тике В СУБТД
-				if (SignalKill(ND, registered_tdb.pid, registered_tdb.tid, SIGUSR1, SI_USER, 0) == -1) {
-					cout << "- Notif: ошибка SignalKill " << endl;
-				}
-			}
+			sendNotifTickPassed();
 		}
 	}
 	return NULL;
 }
 
-//-----------------------------------------------------------------
-//* Функиця обработки сигнала таймера
-//-----------------------------------------------------------------
+/*
+ * Функиця обработки сигнала таймера
+ */
 void gotAPulse(void) {
 
 	time(&now);//Получаем текущий момент времени
@@ -69,5 +64,30 @@ void gotAPulse(void) {
 	cout << endl << "Получен сигнал таймера " << ctime(&now);
 	cout << "CODE_TIMER = " << (int) tsig.M_pulse.code << endl;
 	cout << "Data: " << tsig.M_pulse.value.sival_int << endl;
+}
+
+/*
+ * функция отправки сигнала о прошедшем тике
+ */
+void sendNotifTickPassed() {
+	// захват буфера с зарегистрированными СУБТД
+	pthread_mutex_lock(&tdb_map.Mutex);
+
+	if (tdb_map.buf.empty()) {
+		cout << "- Notif: нет зарегистрированных СУБТД" << endl;
+	} else {
+		cout << "- Notif: отправка SIGUSR1" << endl << endl;
+		// итерация буфера с зарегистрированными СУБТД
+		for (map<string, tdb_ms_t>::iterator it = tdb_map.buf.begin(); it
+				!= tdb_map.buf.end(); ++it) {
+			// Послать сигнал о прошедшем тике В СУБТД
+			if (SignalKill(0, it->second.pid, it->second.tid, SIGUSR1,
+					SI_USER, 0) == -1) {
+				cout << "- Notif: ошибка SignalKill " << endl;
+			}
+		}
+	}
+
+	pthread_mutex_unlock(&tdb_map.Mutex);
 }
 

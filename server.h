@@ -12,7 +12,7 @@
 
 using namespace std;
 
-void regTDB(string name, int pid, int tid);
+bool regTDB(string name, int pid, int tid, int nd);
 
 #endif /* SERVER_H_ */
 

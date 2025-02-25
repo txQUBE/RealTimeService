@@ -9,20 +9,22 @@
 
 #define REG_CHAN 	"RTS_registration_channel"
 
-const int REG_TYPE = 101; //				тип сообщения для регистрации
-const int SEND_TIME_TYPE = 2; //		тип сообщения для отправки времени
+const int REG_TYPE = 101; //	тип сообщения для регистрации
 
-typedef struct _pulse msg_header_t; // абстрактный тип для заголовка сообщения как у импульса
-typedef struct _registration_hadnle {
+typedef struct _pulse msg_header_t; // 		абстрактный тип для заголовка сообщения как у импульса
+typedef struct _registration_hadnle { // 	структура сообщения с данными регистрируемой СУБТД
 	msg_header_t hdr;
-	string name; //		имя СУБТД
-	int pid; //			id процесса
-	int tid; //			id нити
+	string name; //	имя СУБТД
+	int pid; //		id процесса
+	int tid; //		id нити
+	int nd;//		дискриптор узла
 } registration_handle_t;
 
-//Буфер для запоминания СУБТД
-tdb_ms_t registered_tdb;
+tdb_map_buffer_t tdb_map; //	Буфер для запоминания СУБТД
 
+/*
+ * Нить сервера регистрации СУБТД
+ */
 void* server(void*) {
 	cout << "- - - - Server: 	запуск сервера регистрации" << endl;
 	name_attach_t* attach;
@@ -47,6 +49,7 @@ void* server(void*) {
 		}
 
 		if (rcvid == 0) {/* Получен импульс */
+			// обработка системных сигналов
 			switch (msg.hdr.code) {
 			case _PULSE_CODE_DISCONNECT:
 				ConnectDetach(msg.hdr.scoid); /* Уничтожить соединение ядра с каналом сервера*/
@@ -63,6 +66,7 @@ void* server(void*) {
 			continue;
 		}
 		/* Полученное сообщение не импульс */
+		// обработка системных сообщений
 		if (msg.hdr.type == _IO_CONNECT) {
 			cout << "- - - - Server: recieve name_open()\n";
 			MsgReply(rcvid, EOK, NULL, 0);
@@ -73,9 +77,13 @@ void* server(void*) {
 			MsgError(rcvid, ENOSYS );
 			continue;
 		}
+		// обработка сообщения о регистрации
 		if (msg.hdr.code == REG_TYPE) {
 			cout << "- - - - Server: полчено сообщение REG_TYPE \n";
-			regTDB(msg.name, msg.pid, msg.tid);
+			regTDB(msg.name, msg.pid, msg.tid, msg.nd);
+
+			// TODO: обработка успешности ответа
+
 			MsgReply(rcvid, EOK, 0, 0);
 			continue;
 		}
@@ -86,23 +94,31 @@ void* server(void*) {
 	return NULL;
 }
 
-//-----------------------------------------------------------------
-//*	Функция регистрации
-//*	Сохраняет данные о СУБТД
-//-----------------------------------------------------------------
-void regTDB(string name, int pid, int tid) {
-	pthread_mutex_lock(&registered_tdb.Mutex);
+/*
+ * Функция регистрации
+ */
+bool regTDB(string name, int pid, int tid, int nd) {
 
-	registered_tdb.name = name;
-	registered_tdb.pid = pid;
-	registered_tdb.tid = tid;
+	if (tdb_map.buf.count(name) > 0) {
+		return false; // регистрация не выполнена, СУБТД с таким именем уже зарегистрирована
+	}
 
-	pthread_mutex_unlock(&registered_tdb.Mutex);
+	// структура для хранения данных СУБТД
+	tdb_ms_t tdb;
+	tdb.pid = pid;
+	tdb.tid = tid;
+	tdb.nd = nd;
+	tdb_map.buf[name] = tdb;
 
-	cout << "Server: " << endl;
-	cout << "----------TDB_MS REGISTRATION INFO----------" << endl;
-	cout << "	Name = " << registered_tdb.name << endl;
-	cout << "	PID = " << registered_tdb.pid << endl;
-	cout << "	TID = " << registered_tdb.tid << endl;
-	cout << "--------------------------------------------" << endl << endl;
+	bool isRegistered;
+	isRegistered = tdb_map.buf.count(name) > 0;
+	// проверка успеха регистрации
+	if (isRegistered) {
+		cout << "Server: " << endl;
+		cout << "----------TDB_MS REGISTRATION INFO---------" << endl;
+		cout << "				SUCCESS						" << endl;
+		cout << "-------------------------------------------" << endl << endl;
+		return true;
+	}
+	return false;
 }
