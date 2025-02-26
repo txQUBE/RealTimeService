@@ -7,17 +7,17 @@
 #include "server.h"
 #include "utils.h"
 
-#define REG_CHAN 	"RTS_registration_channel"
+#define REG_CHAN "RTS_registration_channel"
 
 const int REG_TYPE = 101; //	тип сообщения для регистрации
 
 typedef struct _pulse msg_header_t; // 		абстрактный тип для заголовка сообщения как у импульса
 typedef struct _registration_hadnle { // 	структура сообщения с данными регистрируемой СУБТД
 	msg_header_t hdr;
-	string name; //	имя СУБТД
-	int pid; //		id процесса
-	int tid; //		id нити
-	int nd;//		дискриптор узла
+	string name; //		имя СУБТД
+	int pid; //			id процесса
+	pthread_t tid; //	id нити
+	int nd;//			дискриптор узла
 } registration_handle_t;
 
 tdb_map_buffer_t tdb_map; //	Буфер для запоминания СУБТД
@@ -97,7 +97,7 @@ void* server(void*) {
 /*
  * Функция регистрации
  */
-bool regTDB(string name, int pid, int tid, int nd) {
+bool regTDB(string name, int pid, pthread_t tid, int nd) {
 
 	if (tdb_map.buf.count(name) > 0) {
 		return false; // регистрация не выполнена, СУБТД с таким именем уже зарегистрирована
@@ -115,9 +115,9 @@ bool regTDB(string name, int pid, int tid, int nd) {
 	// проверка успеха регистрации
 	if (isRegistered) {
 		cout << "Server: " << endl;
-		cout << "----------TDB_MS REGISTRATION INFO---------" << endl;
-		cout << "				SUCCESS						" << endl;
-		cout << "-------------------------------------------" << endl << endl;
+		cout << "--TDB_MS REGISTRATION INFO--" << endl;
+		cout << "SUCCESS						" << endl;
+		cout << "----------------------------" << endl << endl;
 		return true;
 	}
 	return false;

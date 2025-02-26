@@ -36,7 +36,7 @@ void setPeriodicTimerTick(long nsec, int sec); //		установить тик таймера
 int main() {
 
 	timer.tick_nsec = 0; // начальные значения тика
-	timer.tick_sec = 10;// 	начальные значения тика
+	timer.tick_sec = 5;// 	начальные значения тика
 	//инициализация мутекса буфера зарегестрированных СУБТД
 	if (pthread_mutex_init(&tdb_map.Mutex, NULL) != EOK) {
 		std::cout << "main: ошибка pthread_mutex_init(): " << strerror(errno)

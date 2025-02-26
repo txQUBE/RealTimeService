@@ -26,9 +26,9 @@ extern int TICK;// 					ТИК
 
 //Структура для запоминания СУБТД
 typedef struct _tdb_ms {
-	int pid; // 	id процесса
-	int tid; // 	id нити
-	int nd;  // 	дескриптор узла
+	int pid; // 		id процесса
+	pthread_t tid; // 	id нити
+	int nd;  // 		дескриптор узла
 } tdb_ms_t;
 
 typedef struct _tdb_map_buffer{
