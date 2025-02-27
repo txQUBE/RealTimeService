@@ -8,12 +8,6 @@
 #ifndef NOTIF_H_
 #define NOTIF_H_
 
-void gotAPulse(void);//		Функиця обработки сигнала таймера
-struct Clock {
-	long tick_nsec; // Длительность одного тика в наносекундах
-	int Time; // Номер текущего тика часов ПРВ
-};
 
-extern Clock timer; // Буфер таймера
 
 #endif /* NOTIF_H_ */

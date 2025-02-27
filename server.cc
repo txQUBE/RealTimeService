@@ -23,11 +23,23 @@ typedef struct _registration_hadnle { // 	структура сообщения с данными регистри
 
 tdb_map_buffer_t tdb_map; //	Буфер для запоминания СУБТД
 
+// Структура для хранения параметров таймера
+struct Clock {
+	long tick_nsec; // 	Длительность одного тика в наносекундах
+	int tick_sec;// 	Длительность одного тика в секундах
+	timer_t periodicTimer;// дескриптор таймера
+	struct itimerspec periodicTick;// интервал срабатывания относительного таймера в 1 тик
+	int Time; // 		Номер текущего тика часов ПРВ
+};
+
+extern Clock timer;
+
 // Прототипы функций
 // функция регистрации СУБТД в СРВ
 bool reg_tdb(string name, int pid, pthread_t tid, int nd);
 // Функция проверки существования СУБТД в буфере сервера
 bool isRegistered(string name);
+void sendTickParam(int coid);
 
 /*
  * Нить сервера регистрации СУБТД
@@ -85,7 +97,6 @@ void* server(void*) {
 			continue;
 		}
 		if (msg.hdr.type > _IO_BASE && msg.hdr.type <= _IO_MAX) { //Получено IO-сообщение от ядра
-			cout << "_IO_BASE < hdt.type << _IO_MAX\n";
 			MsgError(rcvid, ENOSYS );
 			continue;
 		}
@@ -94,6 +105,19 @@ void* server(void*) {
 			bool success = reg_tdb(msg.name, msg.pid, msg.tid, msg.nd);
 			if (success) {
 			    MsgReply(rcvid, EOK, 0, 0); // Успешная регистрация
+			    // отправить параметры таймера по именованному каналу
+			    // подключиться к именованному каналу
+			    // попытки подключения ограничены по времени в 1 тик
+			    int current_time = timer.Time;
+			    int limit_time = current_time + 1;
+			    int coid;
+				while ((coid = name_open(msg.name.c_str(), 0) == -1) &&
+						(current_time < limit_time)) {
+							current_time = timer.Time;
+				}
+				// отправить параметры таймера
+			    sendTickParam(coid);
+				name_close(coid);
 			} else {
 			    MsgReply(rcvid, EINVAL, 0, 0); // Ошибка регистрации
 			}

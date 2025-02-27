@@ -31,7 +31,8 @@ typedef struct _tdb_ms {
 } tdb_ms_t;
 
 typedef struct _tdb_map_buffer{
-	pthread_mutex_t Mutex;
+	pthread_mutex_t mutex;
+	pthread_mutexattr_t attr;
 	map<string, tdb_ms_t> buf;
 } tdb_map_buffer_t;
 

@@ -8,9 +8,6 @@
 #ifndef REALTIMESERVICE_H_
 #define REALTIMESERVICE_H_
 
-#include <pthread.h> // 	pthread_create
 
-void* server(void*);
-void* notification(void*);
 
 #endif /* REALTIMESERVICE_H_ */

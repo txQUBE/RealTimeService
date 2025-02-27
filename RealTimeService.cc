@@ -13,10 +13,12 @@
  */
 #include "utils.h"
 #include "RealTimeService.h"
+#include <pthread.h>
 
 #define NOTIF_CHAN 	"notification_channel"
 
 bool shutDown = false; //	флаг завершить работу
+bool tick_changed = false; // флаг-статус изменения тика таймера
 
 // Структура для хранения параметров таймера
 struct Clock {
@@ -34,15 +36,21 @@ const int CODE_TIMER = 1;//код сообщения-импульса от таймера
 
 pthread_barrier_t notif_barrier; // барьер синхронизации подключения к каналу для уведомлений таймера
 
+void* server(void*);
+void* notification(void*);
+
 //функция подготовки к запуску периодического таймера уведомления импульсом об истечении тика часов ПРВ
 void setPeriodicTimer(timer_t* periodicTimer,
 		struct itimerspec* periodicTimerStruct, int notif_coid);
 //Функция установки параметров таймера
 void setTimerProps(struct itimerspec* periodicTimerStruct);
+//Функция установки приоритета для нити
+void set_thread_priority(pthread_t thread, int priority);
 
 //Функции меню управления СРВ
 void menu_showList(); // 		отобразить список команд
 void menu_changeTick(); //		изменить тик таймера
+void menu_showTdbMsList();// 	отобрразить список зарегистрированных СУБТД
 
 /*
  * Нить main
@@ -52,27 +60,39 @@ void menu_changeTick(); //		изменить тик таймера
  * Обрабатывает ввод пользователя в качестве опций меню
  */
 int main() {
+	pthread_t server_thread, notification_thread;
 
 	timer.tick_nsec = 0; // начальные значения тика
 	timer.tick_sec = 5;// 	начальные значения тика
 	//инициализация мутекса буфера зарегестрированных СУБТД
-	if (pthread_mutex_init(&tdb_map.Mutex, NULL) != EOK) {
+
+	if (pthread_mutexattr_init(&tdb_map.attr) != EOK) {
+		cerr << "error pthread_mutexattr_init errno: " << errno << endl;
+	}
+	// установить протокол для обработки приоритетных нитей
+	if (pthread_mutexattr_setprotocol(&tdb_map.attr, PTHREAD_PRIO_INHERIT)
+			!= EOK) {
+		cerr << "error pthread_mutexattr_init errno: " << errno << endl;
+	}
+	if (pthread_mutex_init(&tdb_map.mutex, NULL) != EOK) {
 		std::cout << "main: ошибка pthread_mutex_init(): " << strerror(errno)
 				<< std::endl;
 		return EXIT_FAILURE;
 	}
 
 	//запуск сервера регистрации
-	if ((pthread_create(NULL, NULL, &server, NULL)) != EOK) {
+	if ((pthread_create(&server_thread, NULL, server, NULL)) != EOK) {
 		perror("main: error server thread launch\n");
 	};
 
 	pthread_barrier_init(&notif_barrier, NULL, 2); // инициализация барьера подключения к каналу уведомлений для таймера
 
 	//Запуск канала уведомлений
-	if ((pthread_create(NULL, NULL, &notification, NULL)) != EOK) {
+	if ((pthread_create(&notification_thread, NULL, notification, NULL)) != EOK) {
 		perror("main: error notification thread launch\n");
 	}
+	//Установить высокий приоритет для нити уведомлений
+	set_thread_priority(notification_thread, 10);
 
 	pthread_barrier_wait(&notif_barrier);// ожидание создания канала уведомлений
 	pthread_barrier_destroy(&notif_barrier);// освобождение ресурсов
@@ -80,7 +100,7 @@ int main() {
 	int notif_coid = 0;
 	//подключиться к каналу уведомлений
 	if ((notif_coid = name_open(NOTIF_CHAN, 0)) == -1) {
-		cerr << "main: error name_open(NOTIF_CHAN). errno "<< errno << endl;
+		cerr << "main: error name_open(NOTIF_CHAN). errno " << errno << endl;
 		exit(EXIT_FAILURE);
 	}
 
@@ -106,9 +126,14 @@ int main() {
 			menu_changeTick();
 			break;
 		case 2:
+			menu_showTdbMsList();
 			break;
 		}
 	}
+
+	pthread_mutex_destroy(&tdb_map.mutex);
+	cout << "#main: EXIT_SUCCESS" << endl;
+	return EXIT_SUCCESS;
 }
 
 /*
@@ -131,18 +156,15 @@ void menu_changeTick() {
 
 		setTimerProps(&timer.periodicTick);
 		timer_settime(timer.periodicTimer, 0, &timer.periodicTick, NULL);
-	}
-	cout << "New timer tick: " << timer.tick_sec << " sec "
-			<< timer.tick_nsec << " nsec.";
-}
 
-/*
- * Функция отображения меню
- */
-void menu_showList() {
-	cout << "-----MENU-----\n";
-	cout << "1. Change timer tick\n";
-	cout << "-----МЕНЮ-----\n";
+		// Сброс счетчика тиков
+		timer.Time = 0;
+
+		tick_changed = true; // статус об изменении тика
+		cout << "New timer tick: " << timer.tick_sec << " sec "
+				<< timer.tick_nsec << " nsec.";
+	}
+
 }
 
 /*
@@ -173,4 +195,34 @@ void setPeriodicTimer(timer_t* periodicTimer,
 	// установить интервал срабатывания периодического таймера тика в системном времени
 	setTimerProps(periodicTimerStruct);
 }
+
+/*
+ * Функция установки приоритета для нити
+ */
+void set_thread_priority(pthread_t thread, int priority) {
+	struct sched_param param;
+	param.sched_priority = priority;
+	pthread_setschedparam(thread, SCHED_RR, &param); // Используем политику Round Robin
+}
+
+/*
+ * Функция отображения меню
+ */
+void menu_showList() {
+	cout << "-----MENU-----" << endl;
+	cout << "1. Change timer tick" << endl;
+	cout << "2. Show registered tdb list" << endl;
+	cout << "-----МЕНЮ-----" << endl;
+}
+
+void menu_showTdbMsList(){
+	pthread_mutex_lock(&tdb_map.mutex);
+	cout << "#main: REGISTERED TDBMS LIST:" << endl;
+	for (map<string, tdb_ms_t>::iterator it = tdb_map.buf.begin(); it
+					!= tdb_map.buf.end(); ++it) {
+		cout<< it->first << endl;
+	}
+	pthread_mutex_lock(&tdb_map.mutex);
+}
+
 
