@@ -17,7 +17,6 @@
 
 using namespace std;
 
-extern bool DEBUG; //				показывать дополнительные сообщения
 extern bool shutDown; //			флаг завершить работу
 
 extern const int CODE_TIMER; // 	сообщение-импульс от таймера

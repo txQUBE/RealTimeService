@@ -2,7 +2,9 @@
  * notif.cc
  *
  *  Created on: 18.06.2024
- *      Author: qnx
+ *      Author: Грац Д.Д.
+ *
+ *  Нить канала уведомлений об истечении тика таймера
  */
 
 #include "notif.h"
@@ -61,7 +63,7 @@ void gotAPulse(void) {
 
 	time(&now);//Получаем текущий момент времени
 	//Печать строки времени
-	cout << endl << "Получен сигнал таймера " << ctime(&now);
+	cout << endl << "Timer signal received " << ctime(&now);
 	cout << "CODE_TIMER = " << (int) tsig.M_pulse.code << endl;
 	cout << "Data: " << tsig.M_pulse.value.sival_int << endl;
 }
@@ -74,16 +76,23 @@ void sendNotifTickPassed() {
 	pthread_mutex_lock(&tdb_map.Mutex);
 
 	if (tdb_map.buf.empty()) {
-		cout << "- Notif: нет зарегистрированных СУБТД" << endl;
+		cout << "- Notif: no registered TDB_MS" << endl;
 	} else {
-		cout << "- Notif: отправка SIGUSR1" << endl << endl;
+		cout << "- Notif: send SIGUSR1" << endl << endl;
 		// итерация буфера с зарегистрированными СУБТД
 		for (map<string, tdb_ms_t>::iterator it = tdb_map.buf.begin(); it
 				!= tdb_map.buf.end(); ++it) {
 			// Послать сигнал о прошедшем тике В СУБТД
 			if (SignalKill(0, it->second.pid, it->second.tid, SIGUSR1,
 					SI_USER, 0) == -1) {
-				cout << "- Notif: ошибка SignalKill " << endl;
+				if(errno == ESRCH){
+					// Удалить из буфера неактивный процесс
+					cout << "- Notif: erase " << it->first << endl;
+					tdb_map.buf.erase(it->first);
+
+				} else
+				cerr << "- Notif: error SignalKill errno: "<< strerror(errno) << endl;
+
 			}
 		}
 	}

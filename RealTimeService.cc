@@ -1,3 +1,16 @@
+/*
+ * server.cc
+ *
+ *  Created on: 18.06.2024
+ *      Author: Грац Д.Д.
+ *
+ *  Модуль СРВ
+ *  Состоит из:
+ *  	RealTimeService
+ *  	server
+ *  	notification
+ *  Имеет меню для управленияК
+ */
 #include "utils.h"
 #include "RealTimeService.h"
 
@@ -5,12 +18,13 @@
 
 bool shutDown = false; //	флаг завершить работу
 
+// Структура для хранения параметров таймера
 struct Clock {
 	long tick_nsec; // 	Длительность одного тика в наносекундах
 	int tick_sec;// 	Длительность одного тика в секундах
-	int Time; // 		Номер текущего тика часов ПРВ
 	timer_t periodicTimer;// дескриптор таймера
 	struct itimerspec periodicTick;// интервал срабатывания относительного таймера в 1 тик
+	int Time; // 		Номер текущего тика часов ПРВ
 };
 
 Clock timer; // Буфер параметров таймера
@@ -23,15 +37,19 @@ pthread_barrier_t notif_barrier; // барьер синхронизации подключения к каналу дл
 //функция подготовки к запуску периодического таймера уведомления импульсом об истечении тика часов ПРВ
 void setPeriodicTimer(timer_t* periodicTimer,
 		struct itimerspec* periodicTimerStruct, int notif_coid);
+//Функция установки параметров таймера
+void setTimerProps(struct itimerspec* periodicTimerStruct);
 
 //Функции меню управления СРВ
 void menu_showList(); // 		отобразить список команд
 void menu_changeTick(); //		изменить тик таймера
 
-void setPeriodicTimerTick(long nsec, int sec); //		установить тик таймера
-
 /*
  * Нить main
+ * Запускает нить сервера регистрации
+ * Запускает нить уведомлений об истечении тика таймера
+ * Запускает таймер
+ * Обрабатывает ввод пользователя в качестве опций меню
  */
 int main() {
 
@@ -46,22 +64,23 @@ int main() {
 
 	//запуск сервера регистрации
 	if ((pthread_create(NULL, NULL, &server, NULL)) != EOK) {
-		perror("main: ошибка запуска сервера\n");
+		perror("main: error server thread launch\n");
 	};
 
 	pthread_barrier_init(&notif_barrier, NULL, 2); // инициализация барьера подключения к каналу уведомлений для таймера
 
 	//Запуск канала уведомлений
 	if ((pthread_create(NULL, NULL, &notification, NULL)) != EOK) {
-		perror("main: ошибка запуска нити уведомлений\n");
+		perror("main: error notification thread launch\n");
 	}
 
 	pthread_barrier_wait(&notif_barrier);// ожидание создания канала уведомлений
+	pthread_barrier_destroy(&notif_barrier);// освобождение ресурсов
 
 	int notif_coid = 0;
 	//подключиться к каналу уведомлений
 	if ((notif_coid = name_open(NOTIF_CHAN, 0)) == -1) {
-		cout << "main: ошибка подключения к каналу уведомления" << endl;
+		cerr << "main: error name_open(NOTIF_CHAN). errno "<< errno << endl;
 		exit(EXIT_FAILURE);
 	}
 
@@ -71,8 +90,8 @@ int main() {
 	timer_settime(timer.periodicTimer, 0, &timer.periodicTick, NULL);
 	timerId = timer.periodicTimer;
 
-	cout << "Введите команду:\n";
-	cout << "Введите 0 чтобы увидеть список команд\n";
+	cout << "#main: Enter command:\n";
+	cout << "#main: Enter 0 to show menu list\n";
 	// обработка ввода пользователя
 	while (!shutDown) {
 		int userInput;
@@ -82,6 +101,7 @@ int main() {
 		switch (userInput) {
 		case 0:
 			menu_showList();
+			break;
 		case 1:
 			menu_changeTick();
 			break;
@@ -92,32 +112,36 @@ int main() {
 }
 
 /*
- * функция меню для ввода нового значения тика
+ * функция меню изменяющая значение тика таймера
  */
 void menu_changeTick() {
 	if (timerId == -10) {
-		cout << "таймер не запущен\n";
+		cout << "timer doesn't exist\n";
 	} else {
-		cout << "Введите новое значение тика в наносекундах:\n";
+		cout << "Enter new Tick value nsec:\n";
 		int newTick_nsec;
 		cin >> newTick_nsec;
 
-		cout << "Введите новое значение тика в секундах:\n";
+		cout << "Enter new Tick value sec:\n";
 		int newTick_sec;
 		cin >> newTick_sec;
 
-		setPeriodicTimerTick(newTick_nsec, newTick_sec);
+		timer.tick_nsec = newTick_nsec;
+		timer.tick_sec = newTick_sec;
+
+		setTimerProps(&timer.periodicTick);
+		timer_settime(timer.periodicTimer, 0, &timer.periodicTick, NULL);
 	}
-	cout << "Новый тик таймера: " << timer.tick_sec << " сек "
-			<< timer.tick_nsec << " нс.";
+	cout << "New timer tick: " << timer.tick_sec << " sec "
+			<< timer.tick_nsec << " nsec.";
 }
 
 /*
  * Функция отображения меню
  */
 void menu_showList() {
-	cout << "-----МЕНЮ-----\n";
-	cout << "1. Изменить тик таймера\n";
+	cout << "-----MENU-----\n";
+	cout << "1. Change timer tick\n";
 	cout << "-----МЕНЮ-----\n";
 }
 
@@ -132,7 +156,7 @@ void setTimerProps(struct itimerspec* periodicTimerStruct) {
 }
 
 /*
- * Функция создания таймера тика с уведомлением импульсом
+ * Функция подготовки к запуску периодического таймера уведомления импульсом об истечении тика часов ПРВ
  */
 void setPeriodicTimer(timer_t* periodicTimer,
 		struct itimerspec* periodicTimerStruct, int notif_coid) {
@@ -142,7 +166,7 @@ void setPeriodicTimer(timer_t* periodicTimer,
 	SIGEV_PULSE_INIT(&event, notif_coid, SIGEV_PULSE_PRIO_INHERIT, CODE_TIMER,0);
 
 	if (timer_create(CLOCK_REALTIME, &event, periodicTimer) == -1) {
-		perror("Main: 	ошибка timer_create\n");
+		perror("Main: 	error timer_create\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -150,13 +174,3 @@ void setPeriodicTimer(timer_t* periodicTimer,
 	setTimerProps(periodicTimerStruct);
 }
 
-/*
- * функция установки параметров таймера
- */
-void setPeriodicTimerTick(long nsec, int sec) {
-	timer.tick_nsec = nsec;
-	timer.tick_sec = sec;
-
-	setTimerProps(&timer.periodicTick);
-	timer_settime(timer.periodicTimer, 0, &timer.periodicTick, NULL);
-}
