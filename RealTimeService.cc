@@ -77,7 +77,7 @@ int main() {
 	pthread_barrier_wait(&notif_barrier);// ожидание создания канала уведомлений
 	pthread_barrier_destroy(&notif_barrier);// освобождение ресурсов
 
-	int notif_coid = 0;
+	int notif_coid = -1;
 	//подключиться к каналу уведомлений
 	if ((notif_coid = name_open(NOTIF_CHAN, 0)) == -1) {
 		cerr << "main: error name_open(NOTIF_CHAN). errno "<< errno << endl;

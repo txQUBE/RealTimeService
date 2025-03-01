@@ -35,6 +35,6 @@ typedef struct _tdb_map_buffer{
 	map<string, tdb_ms_t> buf;
 } tdb_map_buffer_t;
 
-extern tdb_map_buffer_t tdb_map;;
+extern tdb_map_buffer_t tdb_map;
 
 #endif /* UTILS_H_ */

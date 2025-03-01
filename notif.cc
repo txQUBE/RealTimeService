@@ -96,7 +96,6 @@ void sendNotifTickPassed() {
 			}
 		}
 	}
-
 	pthread_mutex_unlock(&tdb_map.Mutex);
 }
 

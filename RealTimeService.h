@@ -1,5 +1,5 @@
 /*
- * main.h
+ * RealTimeService.h
  *
  *  Created on: 18.06.2024
  *      Author: qnx
