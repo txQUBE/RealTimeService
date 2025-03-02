@@ -9,7 +9,7 @@
 #include "server.h"
 #include "utils.h"
 
-#define REG_CHAN "RTS_registration_channel" // имя канала регистрации
+#define REG_CHAN "rts_registration_channel" // имя канала регистрации
 const int REG_TYPE = 101; //	тип сообщения для регистрации
 
 typedef struct _pulse msg_header_t; // 		абстрактный тип для заголовка сообщения как у импульса
@@ -24,15 +24,13 @@ typedef struct _registration_hadnle { // 	структура сообщения с данными регистри
 tdb_map_buffer_t tdb_map; //	Буфер для запоминания СУБТД
 
 // Структура для хранения параметров таймера
-struct Clock {
+struct clock {
 	long tick_nsec; // 	Длительность одного тика в наносекундах
 	int tick_sec;// 	Длительность одного тика в секундах
 	timer_t periodicTimer;// дескриптор таймера
 	struct itimerspec periodicTick;// интервал срабатывания относительного таймера в 1 тик
 	int Time; // 		Номер текущего тика часов ПРВ
 };
-
-extern Clock timer;
 
 // Прототипы функций
 // функция регистрации СУБТД в СРВ
@@ -48,6 +46,23 @@ void sendTickParam(int coid);
  */
 void* server(void*) {
 	cout << "- - - - Server: starting..." << endl;
+
+	if (pthread_mutexattr_init(&tdb_map.attr) != EOK) {
+		cerr << "error pthread_mutexattr_init errno: " << errno << endl;
+		exit(0);
+	}
+	// установить протокол для обработки приоритетных нитей
+	if (pthread_mutexattr_setprotocol(&tdb_map.attr, PTHREAD_PRIO_INHERIT)
+			!= EOK) {
+		cerr << "error pthread_mutexattr_init errno: " << errno << endl;
+		exit(0);
+	}
+	if (pthread_mutex_init(&tdb_map.mtx, NULL) != EOK) {
+		std::cout << "error pthread_mutex_init(): " << strerror(errno)
+				<< std::endl;
+		exit(0);
+	}
+
 	name_attach_t* attach;
 	registration_handle_t msg;
 	int rcvid;
@@ -55,7 +70,7 @@ void* server(void*) {
 	//	Создание именованного канала
 	if ((attach = name_attach(NULL, REG_CHAN, 0)) == NULL) {
 		cerr << "- - - - Server: 	error name_attach(). errno:" << errno << endl;
-		exit(EXIT_FAILURE);
+		return NULL;
 	}
 
 	//	Цикл ожидания поступления сообщений в именованный канал
@@ -102,22 +117,14 @@ void* server(void*) {
 		}
 		// обработка сообщения о регистрации
 		if (msg.hdr.code == REG_TYPE) {
+			// захватить мутекс буфера
+			pthread_mutex_lock(&tdb_map.mtx);
+			// попытка регистрации
 			bool success = reg_tdb(msg.name, msg.pid, msg.tid, msg.nd);
+			pthread_mutex_unlock(&tdb_map.mtx);
+			// ответ клиенту
 			if (success) {
 			    MsgReply(rcvid, EOK, 0, 0); // Успешная регистрация
-			    // отправить параметры таймера по именованному каналу
-			    // подключиться к именованному каналу
-			    // попытки подключения ограничены по времени в 1 тик
-			    int current_time = timer.Time;
-			    int limit_time = current_time + 1;
-			    int coid;
-				while ((coid = name_open(msg.name.c_str(), 0) == -1) &&
-						(current_time < limit_time)) {
-							current_time = timer.Time;
-				}
-				// отправить параметры таймера
-			    sendTickParam(coid);
-				name_close(coid);
 			} else {
 			    MsgReply(rcvid, EINVAL, 0, 0); // Ошибка регистрации
 			}
@@ -125,9 +132,12 @@ void* server(void*) {
 		}
 	}
 
-	printf("- - - - Server: Server is shutting down \n");
-	name_detach(attach, 0); /* Удалить имя процесса */
-	return NULL;
+	//очистка ресурсов
+	name_detach(attach, 0);
+	pthread_mutexattr_destroy(&tdb_map.attr);
+	pthread_mutex_destroy(&tdb_map.mtx);
+	cout << "- - - - Server: EXIT_SUCCESS" << endl;
+	return EXIT_SUCCESS;
 }
 
 /*
